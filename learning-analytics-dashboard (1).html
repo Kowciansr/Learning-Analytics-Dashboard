@@ -1,0 +1,965 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>LearnPulse — Learning Analytics Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0a0c10;
+    --surface: #111318;
+    --surface2: #181c24;
+    --border: #1e2330;
+    --accent: #00e5a0;
+    --accent2: #4f8ef7;
+    --accent3: #f7a94f;
+    --accent4: #f74f7a;
+    --text: #e8eaf0;
+    --muted: #6b7280;
+    --font-display: 'Syne', sans-serif;
+    --font-body: 'DM Sans', sans-serif;
+    --font-mono: 'DM Mono', monospace;
+    --radius: 12px;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-body);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Ambient background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 60% 40% at 80% 10%, rgba(0,229,160,0.06) 0%, transparent 60%),
+      radial-gradient(ellipse 50% 50% at 10% 80%, rgba(79,142,247,0.05) 0%, transparent 60%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .app { position: relative; z-index: 1; display: flex; flex-direction: column; min-height: 100vh; }
+
+  /* HEADER */
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 32px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(10,12,16,0.8);
+    backdrop-filter: blur(12px);
+    position: sticky; top: 0; z-index: 100;
+  }
+  .logo {
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-size: 1.35rem;
+    letter-spacing: -0.02em;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .logo-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 12px var(--accent);
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.6; transform: scale(0.85); }
+  }
+  .logo span { color: var(--accent); }
+
+  .header-right { display: flex; align-items: center; gap: 16px; }
+  .last-updated {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--muted);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .live-badge {
+    background: rgba(0,229,160,0.12);
+    color: var(--accent);
+    border: 1px solid rgba(0,229,160,0.3);
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    padding: 3px 8px;
+    border-radius: 20px;
+    letter-spacing: 0.08em;
+  }
+
+  /* UPLOAD ZONE */
+  .upload-section {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    flex: 1;
+    padding: 60px 32px;
+    gap: 24px;
+  }
+  .upload-title {
+    font-family: var(--font-display);
+    font-size: 2.8rem;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    text-align: center;
+    line-height: 1.1;
+  }
+  .upload-title span { color: var(--accent); }
+  .upload-sub { color: var(--muted); font-size: 1rem; text-align: center; max-width: 420px; line-height: 1.6; }
+
+  .drop-zone {
+    width: 100%; max-width: 520px;
+    border: 1.5px dashed var(--border);
+    border-radius: 16px;
+    padding: 48px 32px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    background: var(--surface);
+    position: relative;
+  }
+  .drop-zone:hover, .drop-zone.drag-over {
+    border-color: var(--accent);
+    background: rgba(0,229,160,0.04);
+    box-shadow: 0 0 40px rgba(0,229,160,0.08);
+  }
+  .drop-icon {
+    font-size: 3rem; margin-bottom: 16px;
+    filter: grayscale(0.3);
+  }
+  .drop-label {
+    font-family: var(--font-display);
+    font-size: 1rem; font-weight: 600;
+    margin-bottom: 8px;
+  }
+  .drop-hint { font-size: 0.8rem; color: var(--muted); margin-bottom: 20px; }
+  #fileInput { display: none; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 10px 20px; border-radius: 8px;
+    font-family: var(--font-body); font-weight: 500; font-size: 0.9rem;
+    cursor: pointer; border: none; transition: all 0.2s ease;
+  }
+  .btn-primary {
+    background: var(--accent); color: #0a0c10;
+  }
+  .btn-primary:hover { background: #00c98d; transform: translateY(-1px); }
+  .btn-ghost {
+    background: transparent; color: var(--muted);
+    border: 1px solid var(--border);
+  }
+  .btn-ghost:hover { color: var(--text); border-color: var(--muted); }
+
+  .sample-link {
+    font-size: 0.82rem; color: var(--accent2);
+    cursor: pointer; text-decoration: underline;
+    font-family: var(--font-mono);
+  }
+  .sample-link:hover { color: #7db0ff; }
+
+  .required-fields {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px 24px;
+    max-width: 520px; width: 100%;
+  }
+  .required-fields h4 {
+    font-family: var(--font-display); font-size: 0.85rem; font-weight: 700;
+    color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+  .fields-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+  }
+  .field-tag {
+    font-family: var(--font-mono); font-size: 0.72rem;
+    background: var(--surface2); border: 1px solid var(--border);
+    color: var(--accent3); border-radius: 6px; padding: 5px 10px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .field-tag .dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+
+  /* DASHBOARD */
+  #dashboard { display: none; padding: 28px 32px; flex-direction: column; gap: 24px; }
+  #dashboard.active { display: flex; }
+
+  /* Filter bar */
+  .filter-bar {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  }
+  .filter-bar label {
+    font-size: 0.78rem; color: var(--muted); font-family: var(--font-mono);
+    text-transform: uppercase; letter-spacing: 0.08em;
+  }
+  .filter-bar select, .filter-bar input[type=text] {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: var(--font-mono); font-size: 0.8rem;
+    border-radius: 8px; padding: 7px 12px;
+    outline: none; cursor: pointer;
+    transition: border-color 0.2s;
+  }
+  .filter-bar select:hover, .filter-bar input[type=text]:hover { border-color: var(--muted); }
+  .filter-bar select:focus, .filter-bar input[type=text]:focus { border-color: var(--accent); }
+
+  /* KPI Cards */
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+  }
+  @media (max-width: 900px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 500px) { .kpi-grid { grid-template-columns: 1fr; } }
+
+  .kpi-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px 22px;
+    position: relative; overflow: hidden;
+    transition: transform 0.2s, box-shadow 0.2s;
+    animation: fadeUp 0.5s ease both;
+  }
+  .kpi-card:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(0,0,0,0.3); }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .kpi-card:nth-child(1) { animation-delay: 0.05s; }
+  .kpi-card:nth-child(2) { animation-delay: 0.1s; }
+  .kpi-card:nth-child(3) { animation-delay: 0.15s; }
+  .kpi-card:nth-child(4) { animation-delay: 0.2s; }
+
+  .kpi-card::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  }
+  .kpi-card.c1::before { background: var(--accent); }
+  .kpi-card.c2::before { background: var(--accent2); }
+  .kpi-card.c3::before { background: var(--accent3); }
+  .kpi-card.c4::before { background: var(--accent4); }
+
+  .kpi-label {
+    font-family: var(--font-mono);
+    font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em;
+    color: var(--muted); margin-bottom: 10px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .kpi-icon { font-size: 0.9rem; }
+  .kpi-value {
+    font-family: var(--font-display);
+    font-size: 2.4rem; font-weight: 800;
+    letter-spacing: -0.03em; line-height: 1;
+    margin-bottom: 6px;
+  }
+  .kpi-card.c1 .kpi-value { color: var(--accent); }
+  .kpi-card.c2 .kpi-value { color: var(--accent2); }
+  .kpi-card.c3 .kpi-value { color: var(--accent3); }
+  .kpi-card.c4 .kpi-value { color: var(--accent4); }
+  .kpi-sub { font-size: 0.75rem; color: var(--muted); }
+
+  /* Charts grid */
+  .charts-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .charts-grid .chart-card.wide { grid-column: span 2; }
+  @media (max-width: 800px) {
+    .charts-grid { grid-template-columns: 1fr; }
+    .charts-grid .chart-card.wide { grid-column: span 1; }
+  }
+
+  .chart-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 22px;
+    animation: fadeUp 0.5s ease both;
+  }
+  .chart-card:nth-child(1) { animation-delay: 0.25s; }
+  .chart-card:nth-child(2) { animation-delay: 0.3s; }
+  .chart-card:nth-child(3) { animation-delay: 0.35s; }
+  .chart-card:nth-child(4) { animation-delay: 0.4s; }
+
+  .chart-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 18px;
+  }
+  .chart-title {
+    font-family: var(--font-display);
+    font-size: 0.95rem; font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+  .chart-badge {
+    font-family: var(--font-mono); font-size: 0.65rem;
+    background: var(--surface2); border: 1px solid var(--border);
+    color: var(--muted); border-radius: 20px; padding: 3px 10px;
+  }
+  .chart-canvas-wrap { position: relative; height: 220px; }
+
+  /* Table */
+  .table-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    animation: fadeUp 0.5s ease 0.45s both;
+  }
+  .table-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 22px;
+    border-bottom: 1px solid var(--border);
+  }
+  .table-title {
+    font-family: var(--font-display);
+    font-size: 0.95rem; font-weight: 700;
+  }
+
+  .data-table { width: 100%; border-collapse: collapse; }
+  .data-table th {
+    font-family: var(--font-mono);
+    font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.1em;
+    color: var(--muted);
+    padding: 12px 20px; text-align: left;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface2);
+  }
+  .data-table td {
+    padding: 12px 20px;
+    font-size: 0.85rem;
+    border-bottom: 1px solid rgba(30,35,48,0.6);
+  }
+  .data-table tr:last-child td { border-bottom: none; }
+  .data-table tr:hover td { background: rgba(255,255,255,0.02); }
+
+  .badge-completion {
+    display: inline-flex; align-items: center;
+    font-family: var(--font-mono); font-size: 0.72rem;
+    padding: 3px 9px; border-radius: 20px;
+    font-weight: 500;
+  }
+  .badge-high { background: rgba(0,229,160,0.12); color: var(--accent); border: 1px solid rgba(0,229,160,0.25); }
+  .badge-mid { background: rgba(247,169,79,0.12); color: var(--accent3); border: 1px solid rgba(247,169,79,0.25); }
+  .badge-low { background: rgba(247,79,122,0.12); color: var(--accent4); border: 1px solid rgba(247,79,122,0.25); }
+
+  .progress-bar-wrap { display: flex; align-items: center; gap: 10px; }
+  .progress-bar {
+    flex: 1; height: 5px; background: var(--surface2);
+    border-radius: 10px; overflow: hidden;
+  }
+  .progress-fill { height: 100%; border-radius: 10px; transition: width 0.6s ease; }
+
+  /* Back button */
+  .back-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: var(--font-mono); font-size: 0.75rem;
+    color: var(--muted); cursor: pointer;
+    transition: color 0.2s;
+  }
+  .back-btn:hover { color: var(--accent); }
+
+  /* Error / empty states */
+  .error-msg {
+    background: rgba(247,79,122,0.08);
+    border: 1px solid rgba(247,79,122,0.25);
+    color: var(--accent4);
+    border-radius: 8px; padding: 12px 16px;
+    font-family: var(--font-mono); font-size: 0.8rem;
+    margin-top: 12px;
+    display: none;
+  }
+
+  /* Tooltip */
+  .tooltip-hint {
+    font-size: 0.72rem; color: var(--muted);
+    font-family: var(--font-mono);
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- HEADER -->
+  <header>
+    <div class="logo">
+      <div class="logo-dot"></div>
+      Learn<span>Pulse</span>
+    </div>
+    <div class="header-right">
+      <div class="last-updated" id="lastUpdated" style="display:none">
+        Last refreshed: <span id="refreshTime">—</span>
+      </div>
+      <div class="live-badge">● ANALYTICS</div>
+    </div>
+  </header>
+
+  <!-- UPLOAD SECTION -->
+  <section class="upload-section" id="uploadSection">
+    <div class="upload-title">Learning Analytics,<br><span>Reimagined.</span></div>
+    <div class="upload-sub">Upload your learner CSV/Excel data and get a real-time, interactive analytics dashboard. No manual reporting. Ever.</div>
+
+    <div class="drop-zone" id="dropZone">
+      <div class="drop-icon">📊</div>
+      <div class="drop-label">Drop your CSV or Excel file here</div>
+      <div class="drop-hint">Supports .csv, .xls, .xlsx — up to 50,000 rows</div>
+      <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">
+        ⬆ Choose File
+      </button>
+      <input type="file" id="fileInput" accept=".csv,.xlsx,.xls"/>
+      <div style="margin-top:16px; display:flex; align-items:center; gap:18px; justify-content:center; flex-wrap:wrap;">
+        <span class="sample-link" id="loadSampleBtn">✦ Load sample dataset</span>
+        <span style="color:var(--border)">|</span>
+        <span class="sample-link" id="downloadSampleBtn" style="color:var(--accent3)">⬇ Download sample CSV</span>
+      </div>
+    </div>
+
+    <div class="error-msg" id="errorMsg"></div>
+
+    <div class="required-fields">
+      <h4>✦ Expected Column Names</h4>
+      <div class="fields-grid">
+        <div class="field-tag"><span class="dot"></span>learner_name</div>
+        <div class="field-tag"><span class="dot"></span>course_name</div>
+        <div class="field-tag"><span class="dot"></span>completion_pct</div>
+        <div class="field-tag"><span class="dot"></span>quiz_score</div>
+        <div class="field-tag"><span class="dot"></span>time_spent_hrs</div>
+        <div class="field-tag"><span class="dot"></span>engagement_score</div>
+        <div class="field-tag"><span class="dot"></span>status</div>
+        <div class="field-tag"><span class="dot"></span>date</div>
+      </div>
+      <div style="margin-top:12px; font-size:0.72rem; color:var(--muted); font-family:var(--font-mono);">
+        Missing columns will be gracefully omitted. Use sample data to see full features.
+      </div>
+    </div>
+  </section>
+
+  <!-- DASHBOARD -->
+  <div id="dashboard">
+    <div class="filter-bar">
+      <span class="back-btn" id="backBtn">← Back</span>
+      <span style="flex:1"></span>
+      <label>Course</label>
+      <select id="filterCourse"><option value="">All Courses</option></select>
+      <label>Status</label>
+      <select id="filterStatus"><option value="">All</option></select>
+      <label>Search</label>
+      <input type="text" id="searchInput" placeholder="Learner name..."/>
+      <button class="btn btn-ghost" id="resetBtn">↺ Reset</button>
+    </div>
+
+    <div class="kpi-grid">
+      <div class="kpi-card c1">
+        <div class="kpi-label"><span class="kpi-icon">👥</span> Total Learners</div>
+        <div class="kpi-value" id="kpiLearners">—</div>
+        <div class="kpi-sub">enrolled in programs</div>
+      </div>
+      <div class="kpi-card c2">
+        <div class="kpi-label"><span class="kpi-icon">✅</span> Avg Completion</div>
+        <div class="kpi-value" id="kpiCompletion">—</div>
+        <div class="kpi-sub">across all courses</div>
+      </div>
+      <div class="kpi-card c3">
+        <div class="kpi-label"><span class="kpi-icon">🏆</span> Avg Quiz Score</div>
+        <div class="kpi-value" id="kpiQuiz">—</div>
+        <div class="kpi-sub">out of 100</div>
+      </div>
+      <div class="kpi-card c4">
+        <div class="kpi-label"><span class="kpi-icon">⏱</span> Total Hours</div>
+        <div class="kpi-value" id="kpiHours">—</div>
+        <div class="kpi-sub">learning time logged</div>
+      </div>
+    </div>
+
+    <div class="charts-grid">
+      <div class="chart-card">
+        <div class="chart-header">
+          <div class="chart-title">Completion Rate by Course</div>
+          <div class="chart-badge">AVG %</div>
+        </div>
+        <div class="chart-canvas-wrap"><canvas id="chartCompletion"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-header">
+          <div class="chart-title">Quiz Score Distribution</div>
+          <div class="chart-badge">SCORES</div>
+        </div>
+        <div class="chart-canvas-wrap"><canvas id="chartQuiz"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-header">
+          <div class="chart-title">Engagement vs Time Spent</div>
+          <div class="chart-badge">SCATTER</div>
+        </div>
+        <div class="chart-canvas-wrap"><canvas id="chartEngagement"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-header">
+          <div class="chart-title">Enrollment Status Breakdown</div>
+          <div class="chart-badge">STATUS</div>
+        </div>
+        <div class="chart-canvas-wrap"><canvas id="chartStatus"></canvas></div>
+      </div>
+    </div>
+
+    <div class="table-card">
+      <div class="table-header">
+        <div class="table-title">Learner Detail View</div>
+        <span class="tooltip-hint" id="tableCount">—</span>
+      </div>
+      <div style="overflow-x:auto">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Learner</th>
+              <th>Course</th>
+              <th>Completion</th>
+              <th>Quiz Score</th>
+              <th>Time (hrs)</th>
+              <th>Engagement</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ─── Chart.js global defaults ─────────────────────────────────────────────────
+Chart.defaults.color = '#6b7280';
+Chart.defaults.font.family = "'DM Mono', monospace";
+Chart.defaults.font.size = 11;
+
+const COLORS = ['#00e5a0','#4f8ef7','#f7a94f','#f74f7a','#a78bfa','#34d399','#fb923c','#60a5fa'];
+
+let rawData = [];
+let charts = {};
+
+// ─── SAMPLE DATA ──────────────────────────────────────────────────────────────
+function generateSampleData() {
+  const courses = ['Python Fundamentals','Data Science 101','Agile Leadership','UX Design Basics','Cloud Architecture'];
+  const statuses = ['Completed','In Progress','Not Started','Dropped'];
+  const firstNames = ['Alex','Jordan','Morgan','Casey','Taylor','Riley','Drew','Sage','Quinn','Avery','Blake','Cameron','Devon','Emery','Finley','Harper','Indigo','Jesse','Kendall','Logan'];
+  const lastNames = ['Smith','Johnson','Williams','Brown','Jones','Garcia','Miller','Davis','Wilson','Martinez'];
+  const data = [];
+  for (let i = 0; i < 120; i++) {
+    const status = statuses[Math.floor(Math.random() * statuses.length)];
+    const completion = status === 'Completed' ? 100 :
+                       status === 'Not Started' ? 0 :
+                       status === 'Dropped' ? Math.floor(Math.random() * 40) :
+                       Math.floor(Math.random() * 80) + 10;
+    const quiz = status === 'Not Started' ? 0 : Math.floor(Math.random() * 50) + 50;
+    const engagement = Math.min(100, Math.floor(completion * 0.7 + Math.random() * 30));
+    const d = new Date(2024, Math.floor(Math.random()*12), Math.floor(Math.random()*28)+1);
+    data.push({
+      learner_name: `${firstNames[Math.floor(Math.random()*firstNames.length)]} ${lastNames[Math.floor(Math.random()*lastNames.length)]}`,
+      course_name: courses[Math.floor(Math.random() * courses.length)],
+      completion_pct: completion,
+      quiz_score: quiz,
+      time_spent_hrs: +(Math.random() * 12).toFixed(1),
+      engagement_score: engagement,
+      status: status,
+      date: d.toISOString().split('T')[0]
+    });
+  }
+  return data;
+}
+
+// ─── PARSING ──────────────────────────────────────────────────────────────────
+function normalizeRow(row) {
+  const alias = k => {
+    const aliases = {
+      learner_name: ['learner_name','learner','name','student','student_name','user','email'],
+      course_name: ['course_name','course','program','module'],
+      completion_pct: ['completion_pct','completion','complete','progress','pct_complete'],
+      quiz_score: ['quiz_score','quiz','score','grade','assessment_score'],
+      time_spent_hrs: ['time_spent_hrs','time_spent','hours','time','duration'],
+      engagement_score: ['engagement_score','engagement','activity'],
+      status: ['status','state','enrollment_status'],
+      date: ['date','created_at','enrolled_date','timestamp']
+    };
+    const vals = aliases[k] || [];
+    for (const v of vals) {
+      const found = Object.keys(row).find(rk => rk.toLowerCase().replace(/[\s\-]/g,'_') === v);
+      if (found) return row[found];
+    }
+    return '';
+  };
+  return {
+    learner_name: alias('learner_name') || 'Unknown',
+    course_name: alias('course_name') || 'Unknown',
+    completion_pct: parseFloat(alias('completion_pct')) || 0,
+    quiz_score: parseFloat(alias('quiz_score')) || 0,
+    time_spent_hrs: parseFloat(alias('time_spent_hrs')) || 0,
+    engagement_score: parseFloat(alias('engagement_score')) || 0,
+    status: alias('status') || 'Unknown',
+    date: alias('date') || ''
+  };
+}
+
+function loadData(data) {
+  rawData = data.map(normalizeRow);
+  populateFilters();
+  renderDashboard(rawData);
+  document.getElementById('uploadSection').style.display = 'none';
+  document.getElementById('dashboard').classList.add('active');
+  document.getElementById('lastUpdated').style.display = 'flex';
+  document.getElementById('refreshTime').textContent = new Date().toLocaleTimeString();
+}
+
+// ─── FILTERS ─────────────────────────────────────────────────────────────────
+function populateFilters() {
+  const courses = [...new Set(rawData.map(r => r.course_name))].sort();
+  const statuses = [...new Set(rawData.map(r => r.status))].sort();
+  const sel = document.getElementById('filterCourse');
+  courses.forEach(c => { const o = document.createElement('option'); o.value = c; o.textContent = c; sel.appendChild(o); });
+  const sel2 = document.getElementById('filterStatus');
+  statuses.forEach(s => { const o = document.createElement('option'); o.value = s; o.textContent = s; sel2.appendChild(o); });
+}
+
+function getFiltered() {
+  const course = document.getElementById('filterCourse').value;
+  const status = document.getElementById('filterStatus').value;
+  const search = document.getElementById('searchInput').value.toLowerCase();
+  return rawData.filter(r =>
+    (!course || r.course_name === course) &&
+    (!status || r.status === status) &&
+    (!search || r.learner_name.toLowerCase().includes(search))
+  );
+}
+
+// ─── RENDER ───────────────────────────────────────────────────────────────────
+function renderDashboard(data) {
+  const n = data.length;
+  const avg = k => n ? (data.reduce((s,r) => s + r[k], 0) / n) : 0;
+  const total = k => data.reduce((s,r) => s + r[k], 0);
+
+  document.getElementById('kpiLearners').textContent = [...new Set(data.map(r=>r.learner_name))].length;
+  document.getElementById('kpiCompletion').textContent = avg('completion_pct').toFixed(1) + '%';
+  document.getElementById('kpiQuiz').textContent = avg('quiz_score').toFixed(1);
+  document.getElementById('kpiHours').textContent = total('time_spent_hrs').toFixed(0) + 'h';
+
+  renderCharts(data);
+  renderTable(data);
+}
+
+function renderCharts(data) {
+  // Completion by course
+  const courses = [...new Set(data.map(r => r.course_name))];
+  const compByCourse = courses.map(c => {
+    const rows = data.filter(r => r.course_name === c);
+    return +(rows.reduce((s,r) => s + r.completion_pct, 0) / rows.length).toFixed(1);
+  });
+
+  updateChart('chartCompletion', 'bar', {
+    labels: courses.map(c => c.length > 16 ? c.slice(0,15)+'…' : c),
+    datasets: [{
+      label: 'Avg Completion %',
+      data: compByCourse,
+      backgroundColor: courses.map((_,i) => COLORS[i % COLORS.length] + '99'),
+      borderColor: courses.map((_,i) => COLORS[i % COLORS.length]),
+      borderWidth: 1.5,
+      borderRadius: 6,
+    }]
+  }, {
+    scales: {
+      y: { max: 100, grid: { color: '#1e2330' }, ticks: { callback: v => v + '%' } },
+      x: { grid: { display: false } }
+    },
+    plugins: { legend: { display: false } }
+  });
+
+  // Quiz score distribution histogram
+  const bins = [0,10,20,30,40,50,60,70,80,90,100];
+  const binLabels = bins.slice(0,-1).map((b,i) => `${b}–${bins[i+1]}`);
+  const binCounts = binLabels.map((_,i) => data.filter(r => r.quiz_score >= bins[i] && r.quiz_score < bins[i+1]).length);
+
+  updateChart('chartQuiz', 'bar', {
+    labels: binLabels,
+    datasets: [{
+      label: 'Learners',
+      data: binCounts,
+      backgroundColor: '#4f8ef799',
+      borderColor: '#4f8ef7',
+      borderWidth: 1.5,
+      borderRadius: 4,
+    }]
+  }, {
+    scales: {
+      y: { grid: { color: '#1e2330' } },
+      x: { grid: { display: false } }
+    },
+    plugins: { legend: { display: false } }
+  });
+
+  // Engagement scatter
+  updateChart('chartEngagement', 'scatter', {
+    datasets: [{
+      label: 'Learners',
+      data: data.slice(0, 200).map(r => ({ x: r.time_spent_hrs, y: r.engagement_score })),
+      backgroundColor: '#f7a94f55',
+      borderColor: '#f7a94f',
+      borderWidth: 1,
+      pointRadius: 4,
+    }]
+  }, {
+    scales: {
+      x: { title: { display: true, text: 'Time Spent (hrs)', color: '#6b7280' }, grid: { color: '#1e2330' } },
+      y: { title: { display: true, text: 'Engagement Score', color: '#6b7280' }, grid: { color: '#1e2330' }, max: 100 }
+    },
+    plugins: { legend: { display: false } }
+  });
+
+  // Status doughnut
+  const statusMap = {};
+  data.forEach(r => { statusMap[r.status] = (statusMap[r.status] || 0) + 1; });
+  const statusLabels = Object.keys(statusMap);
+  const statusCounts = statusLabels.map(k => statusMap[k]);
+
+  updateChart('chartStatus', 'doughnut', {
+    labels: statusLabels,
+    datasets: [{
+      data: statusCounts,
+      backgroundColor: statusLabels.map((_,i) => COLORS[i % COLORS.length] + 'bb'),
+      borderColor: statusLabels.map((_,i) => COLORS[i % COLORS.length]),
+      borderWidth: 1.5,
+    }]
+  }, {
+    cutout: '65%',
+    plugins: {
+      legend: { position: 'right', labels: { color: '#9ca3af', padding: 12, usePointStyle: true } }
+    }
+  });
+}
+
+function updateChart(id, type, chartData, options = {}) {
+  if (charts[id]) { charts[id].destroy(); }
+  const ctx = document.getElementById(id).getContext('2d');
+  charts[id] = new Chart(ctx, {
+    type,
+    data: chartData,
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 600, easing: 'easeOutQuart' },
+      plugins: {
+        tooltip: {
+          backgroundColor: '#181c24',
+          borderColor: '#1e2330',
+          borderWidth: 1,
+          titleColor: '#e8eaf0',
+          bodyColor: '#9ca3af',
+          padding: 10,
+        },
+        ...options.plugins
+      },
+      scales: {
+        ...(options.scales || {}),
+        ...(Object.fromEntries(Object.entries(options.scales || {}).map(([k,v]) => [k, {
+          ...v,
+          ticks: { color: '#6b7280', ...v.ticks },
+        }])))
+      },
+      ...options
+    }
+  });
+}
+
+function renderTable(data) {
+  const sorted = [...data].sort((a,b) => b.completion_pct - a.completion_pct).slice(0, 100);
+  document.getElementById('tableCount').textContent = `Showing ${sorted.length} of ${data.length} learners`;
+
+  const tbody = document.getElementById('tableBody');
+  tbody.innerHTML = sorted.map(r => {
+    const pct = r.completion_pct;
+    const badgeClass = pct >= 80 ? 'badge-high' : pct >= 40 ? 'badge-mid' : 'badge-low';
+    const fillColor = pct >= 80 ? '#00e5a0' : pct >= 40 ? '#f7a94f' : '#f74f7a';
+    return `
+      <tr>
+        <td style="font-weight:500">${esc(r.learner_name)}</td>
+        <td style="color:var(--muted)">${esc(r.course_name)}</td>
+        <td>
+          <div class="progress-bar-wrap">
+            <div class="progress-bar">
+              <div class="progress-fill" style="width:${pct}%;background:${fillColor}"></div>
+            </div>
+            <span class="badge-completion ${badgeClass}">${pct}%</span>
+          </div>
+        </td>
+        <td style="font-family:var(--font-mono)">${r.quiz_score || '—'}</td>
+        <td style="font-family:var(--font-mono)">${r.time_spent_hrs || '—'}h</td>
+        <td>
+          <div class="progress-bar-wrap">
+            <div class="progress-bar" style="width:80px">
+              <div class="progress-fill" style="width:${r.engagement_score}%;background:var(--accent2)"></div>
+            </div>
+            <span style="font-family:var(--font-mono);font-size:0.72rem;color:var(--muted)">${r.engagement_score}</span>
+          </div>
+        </td>
+        <td><span class="badge-completion ${r.status==='Completed'?'badge-high':r.status==='In Progress'?'badge-mid':'badge-low'}">${esc(r.status)}</span></td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ─── FILE HANDLING ─────────────────────────────────────────────────────────────
+function handleFile(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (!['csv','xls','xlsx'].includes(ext)) {
+    showError('Unsupported file type. Please upload a .csv, .xls, or .xlsx file.');
+    return;
+  }
+  if (ext === 'csv') {
+    Papa.parse(file, {
+      header: true, skipEmptyLines: true,
+      complete: res => {
+        if (!res.data.length) { showError('CSV appears to be empty.'); return; }
+        loadData(res.data);
+      },
+      error: e => showError('Could not parse CSV: ' + e.message)
+    });
+  } else {
+    // xlsx via FileReader + SheetJS-compatible manual reading via Blob
+    const reader = new FileReader();
+    reader.onload = e => {
+      // Load SheetJS dynamically
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+      script.onload = () => {
+        const wb = XLSX.read(e.target.result, { type: 'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const data = XLSX.utils.sheet_to_json(ws, { defval: '' });
+        if (!data.length) { showError('Spreadsheet appears to be empty.'); return; }
+        loadData(data);
+      };
+      document.head.appendChild(script);
+    };
+    reader.readAsArrayBuffer(file);
+  }
+}
+
+function showError(msg) {
+  const el = document.getElementById('errorMsg');
+  el.textContent = '⚠ ' + msg;
+  el.style.display = 'block';
+}
+
+// ─── EVENTS ───────────────────────────────────────────────────────────────────
+document.getElementById('fileInput').addEventListener('change', e => {
+  if (e.target.files[0]) handleFile(e.target.files[0]);
+});
+
+const dz = document.getElementById('dropZone');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+dz.addEventListener('drop', e => {
+  e.preventDefault(); dz.classList.remove('drag-over');
+  if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+});
+
+document.getElementById('loadSampleBtn').addEventListener('click', () => {
+  loadData(generateSampleData());
+});
+
+document.getElementById('downloadSampleBtn').addEventListener('click', () => {
+  const rows = [
+    ['learner_name','course_name','completion_pct','quiz_score','time_spent_hrs','engagement_score','status','date'],
+    ['Alex Smith','Python Fundamentals',100,88,10.5,92,'Completed','2024-01-15'],
+    ['Jordan Johnson','Data Science 101',75,72,7.2,80,'In Progress','2024-01-18'],
+    ['Morgan Williams','Agile Leadership',100,95,8.0,98,'Completed','2024-01-20'],
+    ['Casey Brown','UX Design Basics',30,55,3.1,45,'In Progress','2024-01-22'],
+    ['Taylor Jones','Cloud Architecture',0,0,0.0,0,'Not Started','2024-01-25'],
+    ['Riley Garcia','Python Fundamentals',100,91,11.2,95,'Completed','2024-02-01'],
+    ['Drew Miller','Data Science 101',60,68,5.8,70,'In Progress','2024-02-03'],
+    ['Sage Davis','Agile Leadership',20,50,2.0,35,'Dropped','2024-02-05'],
+    ['Quinn Wilson','UX Design Basics',100,87,9.5,90,'Completed','2024-02-07'],
+    ['Avery Martinez','Cloud Architecture',85,79,8.8,85,'In Progress','2024-02-10'],
+    ['Blake Smith','Python Fundamentals',45,62,4.5,55,'In Progress','2024-02-12'],
+    ['Cameron Johnson','Data Science 101',100,93,12.0,97,'Completed','2024-02-14'],
+    ['Devon Williams','Agile Leadership',100,89,7.8,91,'Completed','2024-02-16'],
+    ['Emery Brown','UX Design Basics',10,0,1.0,15,'In Progress','2024-02-18'],
+    ['Finley Jones','Cloud Architecture',55,70,5.5,65,'In Progress','2024-02-20'],
+    ['Harper Garcia','Python Fundamentals',100,96,10.8,99,'Completed','2024-03-01'],
+    ['Indigo Miller','Data Science 101',35,58,3.5,48,'In Progress','2024-03-03'],
+    ['Jesse Davis','Agile Leadership',0,0,0.0,0,'Not Started','2024-03-05'],
+    ['Kendall Wilson','UX Design Basics',100,84,9.0,88,'Completed','2024-03-07'],
+    ['Logan Martinez','Cloud Architecture',70,75,7.0,78,'In Progress','2024-03-10'],
+    ['Alex Johnson','Python Fundamentals',25,52,2.5,38,'Dropped','2024-03-12'],
+    ['Jordan Williams','Data Science 101',100,90,11.5,94,'Completed','2024-03-14'],
+    ['Morgan Brown','Agile Leadership',80,82,8.2,84,'In Progress','2024-03-16'],
+    ['Casey Jones','UX Design Basics',50,65,5.0,60,'In Progress','2024-03-18'],
+    ['Taylor Garcia','Cloud Architecture',100,92,10.0,96,'Completed','2024-03-20'],
+    ['Riley Miller','Python Fundamentals',65,71,6.5,73,'In Progress','2024-04-01'],
+    ['Drew Davis','Data Science 101',15,48,1.5,22,'Dropped','2024-04-03'],
+    ['Sage Wilson','Agile Leadership',100,97,9.2,99,'Completed','2024-04-05'],
+    ['Quinn Martinez','UX Design Basics',40,60,4.0,52,'In Progress','2024-04-07'],
+    ['Avery Smith','Cloud Architecture',90,85,9.8,89,'In Progress','2024-04-10'],
+    ['Blake Johnson','Python Fundamentals',100,88,10.2,93,'Completed','2024-04-12'],
+    ['Cameron Williams','Data Science 101',55,67,5.5,66,'In Progress','2024-04-14'],
+    ['Devon Brown','Agile Leadership',0,0,0.0,0,'Not Started','2024-04-16'],
+    ['Emery Jones','UX Design Basics',100,91,9.7,95,'Completed','2024-04-18'],
+    ['Finley Garcia','Cloud Architecture',30,54,3.0,42,'In Progress','2024-04-20'],
+    ['Harper Miller','Python Fundamentals',75,78,7.5,81,'In Progress','2024-05-01'],
+    ['Indigo Davis','Data Science 101',100,94,12.5,97,'Completed','2024-05-03'],
+    ['Jesse Wilson','Agile Leadership',60,70,6.0,72,'In Progress','2024-05-05'],
+    ['Kendall Martinez','UX Design Basics',20,50,2.0,30,'Dropped','2024-05-07'],
+    ['Logan Smith','Cloud Architecture',100,86,10.5,90,'Completed','2024-05-10'],
+  ];
+  const csv = rows.map(r => r.join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'sample-learner-data.csv';
+  a.click();
+});
+
+document.getElementById('backBtn').addEventListener('click', () => {
+  document.getElementById('dashboard').classList.remove('active');
+  document.getElementById('uploadSection').style.display = 'flex';
+  document.getElementById('lastUpdated').style.display = 'none';
+  Object.values(charts).forEach(c => c.destroy());
+  charts = {};
+  rawData = [];
+  document.getElementById('filterCourse').innerHTML = '<option value="">All Courses</option>';
+  document.getElementById('filterStatus').innerHTML = '<option value="">All</option>';
+  document.getElementById('searchInput').value = '';
+});
+
+['filterCourse','filterStatus','searchInput'].forEach(id => {
+  document.getElementById(id).addEventListener('input', () => {
+    renderDashboard(getFiltered());
+  });
+});
+
+document.getElementById('resetBtn').addEventListener('click', () => {
+  document.getElementById('filterCourse').value = '';
+  document.getElementById('filterStatus').value = '';
+  document.getElementById('searchInput').value = '';
+  renderDashboard(rawData);
+});
+</script>
+</body>
+</html>
